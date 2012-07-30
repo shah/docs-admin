@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"html/template"
 	"io/ioutil"
@@ -11,12 +12,33 @@ import (
 
 const VERSION = "1.0.0"
 
+/*
+ * Create a structure that implements that Value interface so that directories can be passed
+ * in through Flags package
+ */
+
+type Directories struct {
+	Entries []string
+}
+
+func (d *Directories) String() string {
+	return strings.Join(d.Entries, ",")
+}
+
+func (d *Directories) Set(value string) error {
+	d.Entries = append(d.Entries, value)
+	return nil
+}
+
 type Options struct {
-	SourceDirs      []string        // the directories we need to search
+	Agency          string          // the agency to apply if not found in the folder structure
+	Component       string          // the component to apply if not found in the folder structure
+	SourceDirs      Directories     // the directories we need to search
 	Extensions      map[string]bool // a set of extensions we should allow (.pdf .txt, etc)
 	FieldsSeparator rune            // the delimeter of the fields in the file name
 	HtmlReport      string          // the name of the output file containing the human-readable report
-	JsonResult      string          // the file in which to store the Results JSON representation
+	PhpDataFile     string          // the PHP data file that should be created
+	PhpVarName      string          // the PHP variable that the data should be assigned to
 	Verbose         bool
 }
 
@@ -53,36 +75,40 @@ type DocumentInfo struct {
 	ValidationMessages []string
 }
 
-func getFieldValue(options Options, fields []string, index int) string {
+func getFieldValue(options Options, fields []string, index int, defaultValue string) string {
 	// if the field doesn't exist or is blank, return nil
 	if len(fields) > index {
-		return strings.TrimSpace(fields[index])
+		value := strings.TrimSpace(fields[index])
+		if len(value) > 0 {
+			return value
+		}
+		return defaultValue
 	}
-	return ""
+	return defaultValue
 }
 
 func (di *DocumentInfo) inspect(options Options, file WalkedFile) {
 	di.FileIndex = file.FileIndex
 
 	di.OrgStructParsed = strings.Split(file.Ancestors, string(os.PathSeparator))
-	di.Agency = getFieldValue(options, di.OrgStructParsed, 0)
-	di.Component = getFieldValue(options, di.OrgStructParsed, 1)
-	di.YearInOrgStruct = getFieldValue(options, di.OrgStructParsed, 2)
+	di.Agency = getFieldValue(options, di.OrgStructParsed, 0, options.Agency)
+	di.Component = getFieldValue(options, di.OrgStructParsed, 1, options.Component)
+	di.YearInOrgStruct = getFieldValue(options, di.OrgStructParsed, 2, "")
 
 	di.FieldsParsed = strings.Split(file.FileNameOnlyNoExtn, string(options.FieldsSeparator))
-	di.LastName = getFieldValue(options, di.FieldsParsed, 0)
-	di.FirstName = getFieldValue(options, di.FieldsParsed, 1)
-	di.MiddleName = getFieldValue(options, di.FieldsParsed, 2)
-	di.PositionTitle = getFieldValue(options, di.FieldsParsed, 3)
-	di.YearInFileName = getFieldValue(options, di.FieldsParsed, 4)
-	di.DocumentType = getFieldValue(options, di.FieldsParsed, 5)
+	di.LastName = getFieldValue(options, di.FieldsParsed, 0, "")
+	di.FirstName = getFieldValue(options, di.FieldsParsed, 1, "")
+	di.MiddleName = getFieldValue(options, di.FieldsParsed, 2, "")
+	di.PositionTitle = getFieldValue(options, di.FieldsParsed, 3, "")
+	di.YearInFileName = getFieldValue(options, di.FieldsParsed, 4, "")
+	di.DocumentType = getFieldValue(options, di.FieldsParsed, 5, "")
 
-	emailsText := getFieldValue(options, di.FieldsParsed, 6)
+	emailsText := getFieldValue(options, di.FieldsParsed, 6, "")
 	if emailsText != "" {
 		di.Emails = strings.Split(emailsText, ",")
 	}
 
-	di.OptionalField = getFieldValue(options, di.FieldsParsed, 7)
+	di.OptionalField = getFieldValue(options, di.FieldsParsed, 7, "")
 }
 
 func (di *DocumentInfo) addMessage(options Options, message string) {
@@ -101,7 +127,7 @@ func (di *DocumentInfo) validate(options Options, file WalkedFile) {
 
 	fieldsParsedCount := len(di.FieldsParsed)
 	if len(di.FieldsParsed) < 6 {
-		di.addMessage(options, fmt.Sprintf("At least six fields are required, only %d found", fieldsParsedCount))
+		di.addMessage(options, fmt.Sprintf("At least six fields are required, only %d were found in the filename", fieldsParsedCount))
 	}
 
 	if di.LastName == "" {
@@ -196,53 +222,116 @@ func (r *Results) walkSourceDirs() {
 	r.Inspected = make([]InspectedFile, 0, 100)
 	r.LastFileIndex = 0
 
-	for index := range r.Options.SourceDirs {
-		dirPath := r.Options.SourceDirs[index]
+	for index := range r.Options.SourceDirs.Entries {
+		dirPath := r.Options.SourceDirs.Entries[index]
 		r.walkSourceDir(index, dirPath, dirPath, 0)
 	}
 }
 
-func (r *Results) createHtmlReport() {
+func (r *Results) createReport(name string, tmplContents string, fileName string) {
 
-	tmpl := template.New("HTML Report")
-	tmpl, err := tmpl.Parse(htmlReportTemplate)
+	tmpl := template.New(name)
+	tmpl, err := tmpl.Parse(tmplContents)
 	if err == nil {
-		f, err := os.Create(r.Options.HtmlReport)
+		f, err := os.Create(fileName)
 		if err == nil {
 			err := tmpl.Execute(f, r)
 			if err != nil {
-				fmt.Println("Error executing htmlReportTemplate: ", err)
+				fmt.Println("Error executing "+name+"template: ", err)
+			} else {
+				fmt.Println("Successfully created", f.Name())
 			}
 		} else {
-			fmt.Println("Error writing HTML Report: ", err)
+			fmt.Println("Error writing "+name+":", err)
 		}
 		f.Close()
 	} else {
-		fmt.Println("Error parsing template htmlReportTemplate: ", err)
+		fmt.Println("Error parsing "+name+" template: ", err)
 	}
 
 }
 
-func (o *Options) validate() {
-	fmt.Println("TODO: Validate Options!", o)
+func (o *Options) validate() bool {
+	flag.Parse()
+
+	if o.SourceDirs.Entries == nil || len(o.SourceDirs.Entries) == 0 {
+		fmt.Println("No source directories provided using -folder option.")
+		flag.Usage()
+		return false
+	}
+
+	for _, entry := range o.SourceDirs.Entries {
+		f, err := os.Open(entry)
+		if err != nil {
+			fmt.Println("Folder", entry, "could not be opened -", err)
+			flag.Usage()
+			return false
+		}
+		defer f.Close()
+		fi, err := f.Stat()
+		if err != nil || !fi.IsDir() {
+			fmt.Println(entry, "is not a folder", err)
+			flag.Usage()
+			return false
+		}
+	}
+
+	return true
 }
 
 func main() {
 	var options Options
 
-	options.SourceDirs = []string{"C:\\Projects\\MAX-OGE\\docs-generator\\generated-files"}
+	flag.Var(&options.SourceDirs, "folder", "The folder to inspect for documents, can be provided multiple times")
+	flag.StringVar(&options.Agency, "agency", "", "The agency to use if it's not available in the folder structure")
+	flag.StringVar(&options.Component, "component", "", "The component to use if it's not available in the folder structure")
+	flag.StringVar(&options.HtmlReport, "report", "report.html", "The file in which to store the HTML report")
+	flag.StringVar(&options.PhpDataFile, "phpDataFile", "", "The file in which to store the file information as PHP data")
+	flag.StringVar(&options.PhpVarName, "phpVarName", "FILES", "The PHP variable to assign the file data to")
+
+	//options.SourceDirs.Set("C:\\Projects\\MAX-OGE\\docs-generator\\generated-files")
 	options.Extensions = map[string]bool{".pdf": true}
 	options.FieldsSeparator = ';'
-	options.HtmlReport = "report.html"
-	options.JsonResult = "result.json"
 
-	options.validate()
-
-	var results Results
-	results.Options = options
-	results.walkSourceDirs()
-	results.createHtmlReport()
+	if options.validate() {
+		var results Results
+		results.Options = options
+		results.walkSourceDirs()
+		fmt.Println(results.LastFileIndex, "documents found in", len(results.DirsWalked), "folders.")
+		results.createReport("HTML Report", htmlReportTemplate, options.HtmlReport)
+		if len(options.PhpDataFile) > 0 {
+			results.createReport("PHP Data", phpDataTemplate, options.PhpDataFile)
+		}
+	}
 }
+
+const phpDataTemplate = `
+{{.Options.PhpVarName}}_VERSION = ` + VERSION + `;
+{{.Options.PhpVarName}} = array(
+{{range .Inspected}}
+	array( "index" => {{.File.FileIndex}}, 
+		   "fullPath" => "{{.File.FullPath}}",
+		   "ancestors" => "{{.File.Ancestors}}",
+		   "depth" => {{.File.Depth}},
+		   "containingDir" => "{{.File.ContainingDir}}",
+		{{with .DocInfo}}
+		   "agency" => "{{.Agency}}",
+		   "component" => "{{.Component}}",
+		   "yearInDirName" => "{{.YearInOrgStruct}}",
+		   "lastName" => "{{.LastName}}",
+		   "firstName" => "{{.FirstName}}",
+		   "middleName" => "{{.MiddleName}}",
+		   "yearInFileName" => "{{.YearInFileName}}",
+		   "docType" => "{{.DocumentType}}",
+		   "emails" => array({{range .Emails}}"{{.}}",{{end}})
+		   "optional" => "{{.OptionalField}}",
+		   "valid" => {{.IsValid}},
+		   "errors" => array({{range .ValidationMessages}}"{{.}}",{{end}})
+		   ),
+		{{end}}
+{{end}}
+);
+`
 
 const htmlReportTemplate = `
 <html>
@@ -429,8 +518,16 @@ const htmlReportTemplate = `
 			</thead>
 			{{with .Options}}
 			<tr>
+				<td class="name">Agency</td>
+				<td class="value">{{.Agency}}</td>
+			</tr>
+			<tr>
+				<td class="name">Component</td>
+				<td class="value">{{.Component}}</td>
+			</tr>
+			<tr>
 				<td class="name">Source directories</td>
-				<td class="value">{{.SourceDirs}}</td>
+				<td class="value">{{.SourceDirs.Entries}}</td>
 			</tr>
 			<tr>
 				<td class="name">Extensions</td>
@@ -443,10 +540,6 @@ const htmlReportTemplate = `
 			<tr>
 				<td class="name">Html Report File</td>
 				<td class="value">{{.HtmlReport}}</td>
-			</tr>
-			<tr>
-				<td class="name">JSON Result</td>
-				<td class="value">{{.JsonResult}}</td>
 			</tr>
 			{{end}}
 		</table>

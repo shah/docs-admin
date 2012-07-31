@@ -10,36 +10,39 @@ import (
 	"strings"
 )
 
-const VERSION = "1.0.1"
+const VERSION = "1.0.2"
 
 /*
  * Create a structure that implements the Value interface so that directories can be passed
  * in through Flags package
  */
 
-type Directories struct {
+type StringList struct {
 	Entries []string
 }
 
-func (d *Directories) String() string {
-	return strings.Join(d.Entries, ",")
+func (sl *StringList) String() string {
+	return strings.Join(sl.Entries, ",")
 }
 
-func (d *Directories) Set(value string) error {
-	d.Entries = append(d.Entries, value)
+func (sl *StringList) Set(value string) error {
+	sl.Entries = append(sl.Entries, value)
 	return nil
 }
 
 type Options struct {
-	Agency          string          // the agency to apply if not found in the folder structure
-	Component       string          // the component to apply if not found in the folder structure
-	SourceDirs      Directories     // the directories we need to search
-	Extensions      map[string]bool // a set of extensions we should allow (.pdf .txt, etc)
-	FieldsSeparator rune            // the delimeter of the fields in the file name
-	HtmlReport      string          // the name of the output file containing the human-readable report
-	PhpDataFile     string          // the PHP data file that should be created
-	PhpVarName      string          // the PHP variable that the data should be assigned to
-	Verbose         bool
+	Agency                 string          // the agency to apply if not found in the folder structure
+	Component              string          // the component to apply if not found in the folder structure
+	WarnOnMissingAgency    bool            // create a warning in files that are missing an agency structure
+	WarnOnMissingComponent bool            // create a warning in files that are missing a component structure
+	SourceDirs             StringList      // the directories we need to search
+	Extensions             map[string]bool // a set of extensions we should allow (.pdf .txt, etc)
+	FieldsSeparator        rune            // the delimeter of the fields in the file name
+	HtmlReport             string          // the name of the output file containing the human-readable report
+	PhpTemplate            string          // the PHP template the utility should use to generate 
+	PhpDataFile            string          // the PHP data file that should be created
+	PhpVarName             string          // the PHP variable that the data should be assigned to
+	Verbose                bool
 }
 
 type WalkedFile struct {
@@ -118,10 +121,10 @@ func (di *DocumentInfo) addMessage(options Options, message string) {
 
 func (di *DocumentInfo) validate(options Options, file WalkedFile) {
 	di.IsValid = true
-	if di.Agency == "" {
+	if options.WarnOnMissingAgency && di.Agency == "" {
 		di.addMessage(options, "Agency could not be ascertained from folder structure")
 	}
-	if di.Component == "" {
+	if options.WarnOnMissingComponent && di.Component == "" {
 		di.addMessage(options, "Component could not be ascertained from folder structure")
 	}
 
@@ -301,6 +304,8 @@ func main() {
 	flag.StringVar(&options.HtmlReport, "report", "report.html", "The file in which to store the HTML report")
 	flag.StringVar(&options.PhpDataFile, "phpDataFile", "", "The file in which to store the file information as PHP data")
 	flag.StringVar(&options.PhpVarName, "phpVarName", "FILES", "The PHP variable to assign the file data to")
+	flag.BoolVar(&options.WarnOnMissingAgency, "warnOnMissingAgency", false, "Should we warn if a agency is missing from folder structure?")
+	flag.BoolVar(&options.WarnOnMissingComponent, "warnOnMissingComponent", false, "Should we warn if a component is missing from folder structure?")
 
 	//options.SourceDirs.Set("C:\\Projects\\MAX-OGE\\docs-generator\\generated-files")
 	options.Extensions = map[string]bool{".pdf": true}
@@ -406,8 +411,7 @@ const htmlReportTemplate = `
 		<ul>
 			<li>If you are looking for a file and do not see it in table below, please look at the 
 				<a href="#DirsWalked">Directories Walked</a> section below to see which directories were inspected.</li>
-			<li>As you hover (place your mouse) over a file in the table below you will see the original file name.</li>
-			<li>When you click on a row in the table below you will be taken to the file details for that file.</li>
+			<li>As you click on a row in the table below you will see the original file name and other file details.</li>
 		</ul>
 		</div>
 

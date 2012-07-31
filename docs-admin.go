@@ -10,10 +10,10 @@ import (
 	"strings"
 )
 
-const VERSION = "1.0.0"
+const VERSION = "1.0.1"
 
 /*
- * Create a structure that implements that Value interface so that directories can be passed
+ * Create a structure that implements the Value interface so that directories can be passed
  * in through Flags package
  */
 
@@ -252,12 +252,25 @@ func (r *Results) createReport(name string, tmplContents string, fileName string
 }
 
 func (o *Options) validate() bool {
+
+	usage := flag.Bool("help", false, "Display usage information")
+
 	flag.Parse()
 
-	if o.SourceDirs.Entries == nil || len(o.SourceDirs.Entries) == 0 {
-		fmt.Println("No source directories provided using -folder option.")
+	if *usage {
 		flag.Usage()
 		return false
+	}
+
+	if o.SourceDirs.Entries == nil || len(o.SourceDirs.Entries) == 0 {
+		pwd, err := os.Getwd()
+		if err == nil {
+			o.SourceDirs.Set(pwd)
+		} else {
+			fmt.Println("Current directory could not be obtained -", err)
+			flag.Usage()
+			return false
+		}
 	}
 
 	for _, entry := range o.SourceDirs.Entries {

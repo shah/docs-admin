@@ -32,18 +32,20 @@ func (sl *StringList) Set(value string) error {
 }
 
 type Options struct {
-	Agency                 string          // the agency to apply if not found in the folder structure
-	Component              string          // the component to apply if not found in the folder structure
-	WarnOnMissingAgency    bool            // create a warning in files that are missing an agency structure
-	WarnOnMissingComponent bool            // create a warning in files that are missing a component structure
-	SourceDirs             StringList      // the directories we need to search
-	Extensions             map[string]bool // a set of extensions we should allow (.pdf .txt, etc)
-	FieldsSeparator        rune            // the delimeter of the fields in the file name
-	HtmlReport             string          // the name of the output file containing the human-readable report
-	PhpTemplate            string          // the PHP template the utility should use to generate 
-	PhpDataFile            string          // the PHP data file that should be created
-	PhpVarName             string          // the PHP variable that the data should be assigned to
-	Verbose                bool
+	Agency                   string          // the agency to apply if not found in the folder structure
+	Component                string          // the component to apply if not found in the folder structure
+	WarnOnMissingAgency      bool            // create a warning in files that are missing an agency structure
+	WarnOnMissingComponent   bool            // create a warning in files that are missing a component structure
+	SourceDirs               StringList      // the directories we need to search
+	Extensions               map[string]bool // a set of extensions we should allow (.pdf .txt, etc)
+	FieldsSeparator          rune            // the delimeter of the fields in the file name
+	HtmlReport               string          // the name of the output file containing the human-readable report
+	PhpTemplate              string          // the PHP template the utility should use to generate 
+	PhpDataFile              string          // the PHP data file that should be created
+	PhpVarName               string          // the PHP variable that the data should be assigned to
+	ErrorSingleFileSizeBytes int64           // if any single file goes over this size, create an error message
+	WarnAverageFileSizeBytes int64           // if the average file size across the entire set is this amount, warn
+	Verbose                  bool
 }
 
 type WalkedFile struct {
@@ -145,11 +147,10 @@ func (di *DocumentInfo) validate(options Options, file WalkedFile) {
 	}
 	if di.YearInFileName == "" {
 		di.addMessage(options, "Year was not found in the filename")
+	} else if di.YearInFileName != "2012" {
+		di.addMessage(options, "Only reports FILED since Jan 1, 2012 are required to be posted so year should be 2012")
 	}
-	/*	if di.YearInOrgStruct != "" && di.YearInFileName != "" && di.YearInOrgStruct != di.YearInFileName {
-			di.addMessage(options, fmt.Sprintf("The year specified in the folder (%s) is different from the one one specified in the filename (%s)", di.YearInOrgStruct, di.YearInFileName))
-		}
-	*/if di.DocumentType == "" {
+	if di.DocumentType == "" {
 		di.addMessage(options, "Form (document) type was not found in the filename")
 	} else {
 		matched, err := regexp.MatchString("^278(NEW|ANN|TERM|TR0[1-9].*|TR1[0-2].*)$", di.DocumentType)
@@ -159,6 +160,11 @@ func (di *DocumentInfo) validate(options Options, file WalkedFile) {
 			di.addMessage(options, "Form (document) type '"+di.DocumentType+"' is invalid. Allowed: 278NEW, 278ANN, 278TERM, 278TRnn, 278nnxx")
 		}
 	}
+
+	if file.File.Size() > options.ErrorSingleFileSizeBytes {
+		di.addMessage(options, fmt.Sprintf("The file size, %d kilobytes, is greater than the suggested limit of %d. Please check scanner/PDF settings to see if it can be smaller.", file.File.Size()/1024, options.ErrorSingleFileSizeBytes/1024))
+	}
+
 }
 
 type InspectedFile struct {
@@ -175,12 +181,13 @@ func NewInspectedFile(options Options, file WalkedFile) *InspectedFile {
 }
 
 type Results struct {
-	Options       Options
-	DirsWalked    []string
-	FilesWalked   []WalkedFile
-	Inspected     []InspectedFile
-	Errors        []error
-	LastFileIndex int
+	Options              Options
+	DirsWalked           []string
+	FilesWalked          []WalkedFile
+	Inspected            []InspectedFile
+	Errors               []error
+	LastFileIndex        int
+	TotalBytesInAllFiles int64
 }
 
 func (r *Results) walkSourceDir(sourceDirIndex int, rootPath string, activePath string, depth int) {
@@ -209,6 +216,7 @@ func (r *Results) walkSourceDir(sourceDirIndex int, rootPath string, activePath 
 			r.walkSourceDir(sourceDirIndex, rootPath, filepath.Join(activePath, entry.Name()), depth+1)
 		} else {
 			r.LastFileIndex++
+			r.TotalBytesInAllFiles += entry.Size()
 			fileExtn := filepath.Ext(entry.Name())
 			fileNameOnlyNoExtn := entry.Name()[0 : len(entry.Name())-len(fileExtn)]
 			walkedFile := WalkedFile{r.LastFileIndex, sourceDirIndex, rootPath, filepath.Join(activePath, entry.Name()), entry, fileNameOnlyNoExtn, fileExtn, depth, ancestors, activePath}
@@ -260,6 +268,22 @@ func (r *Results) createReport(name string, tmplContents string, fileName string
 		fmt.Println("Error parsing "+name+" template: ", err)
 	}
 
+}
+
+func (r *Results) TotalUploadSizeMB() float32 {
+	return float32(r.TotalBytesInAllFiles / 1024 / 1024)
+}
+
+func (r *Results) AverageFileSizeMB() float32 {
+	return float32((r.TotalBytesInAllFiles / int64(r.LastFileIndex)) / 1024 / 1024)
+}
+
+func (r *Results) WarnAverageFileSizeTooBig() bool {
+	return (r.TotalBytesInAllFiles / int64(r.LastFileIndex)) > r.Options.WarnAverageFileSizeBytes
+}
+
+func (r *Results) WarnAverageFileSizeMBValue() float32 {
+	return float32(r.Options.WarnAverageFileSizeBytes / 1024 / 1024)
 }
 
 func (o *Options) validate() bool {
@@ -314,6 +338,8 @@ func main() {
 	flag.StringVar(&options.PhpVarName, "phpVarName", "$FILES", "The PHP variable to assign the file data to")
 	flag.BoolVar(&options.WarnOnMissingAgency, "warnOnMissingAgency", false, "Should we warn if a agency is missing from folder structure?")
 	flag.BoolVar(&options.WarnOnMissingComponent, "warnOnMissingComponent", false, "Should we warn if a component is missing from folder structure?")
+	flag.Int64Var(&options.ErrorSingleFileSizeBytes, "errorSingleFileSizeBytes", 1024*500, "Display an error for any files larger than this size")
+	flag.Int64Var(&options.WarnAverageFileSizeBytes, "warnAverageFileSizeBytes", 1024*384, "Display a warning if average size of files in the download exceeds this threshold")
 
 	//options.SourceDirs.Set("C:\\Projects\\MAX-OGE\\docs-generator\\generated-files")
 	options.Extensions = map[string]bool{".pdf": true}
@@ -412,7 +438,7 @@ const htmlReportTemplate = `
 		<div>
 		Thank you for using the Office of Government Ethics (OGE.gov) NoPAS Forms Submission Preparation
 		Analysis Utility version ` + VERSION + `. We have scanned your directories and discovered the following files and associated
-		data using the file naming convention rules defined by OGE for file submissions. 
+		data using the <a href="https://max.omb.gov/community/x/cAOoJQ">file naming convention rules defined by OGE</a> for file submissions. 
 		</div>
 		<div>
 		Notes:
@@ -425,6 +451,16 @@ const htmlReportTemplate = `
 
 
 		<h2>Files Discovered</h2>
+		<div>
+			Total files: {{.LastFileIndex}}<br>
+			Total upload size: {{printf "%0.2f".TotalUploadSizeMB}} megabytes.<br>
+			Average size of each file: {{printf "%0.2f".AverageFileSizeMB}} megabytes
+
+			{{if .WarnAverageFileSizeTooBig}}
+			<p><b>IMPORTANT NOTE</b>: The average size of your files is over {{.WarnAverageFileSizeMBValue}} megabytes. Please try and make the file sizes smaller.</p>
+			{{end}}
+
+		</div>
 		<table id="Inspected">
 			<thead>
 				<tr class>

@@ -377,6 +377,7 @@ const phpDataTemplate = `
 		   "docType" => "{{.DocumentType}}",
 		   "emails" => array({{range .Emails}}"{{.}}",{{end}}),
 		   "optional" => "{{.OptionalField}}",
+		   "positionTitle" => "{{.PositionTitle}}}",
 		   "valid" => {{.IsValid}},
 		   "errors" => array({{range .ValidationMessages}}"{{.}}",{{end}})
 		   ),
@@ -454,7 +455,7 @@ const htmlReportTemplate = `
 		<div>
 			Total files: {{.LastFileIndex}}<br>
 			Total upload size: {{printf "%0.2f".TotalUploadSizeMB}} megabytes.<br>
-			Average size of each file: {{printf "%0.2f".AverageFileSizeMB}} megabytes
+			Average size of each file: {{printf "%0.2f".AverageFileSizeMB}} megabytes.
 
 			{{if .WarnAverageFileSizeTooBig}}
 			<p><b>IMPORTANT NOTE</b>: The average size of your files is over {{.WarnAverageFileSizeMBValue}} megabytes. Please try and make the file sizes smaller.</p>

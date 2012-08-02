@@ -146,10 +146,10 @@ func (di *DocumentInfo) validate(options Options, file WalkedFile) {
 	if di.YearInFileName == "" {
 		di.addMessage(options, "Year was not found in the filename")
 	}
-	if di.YearInOrgStruct != "" && di.YearInFileName != "" && di.YearInOrgStruct != di.YearInFileName {
-		di.addMessage(options, fmt.Sprintf("The year specified in the folder (%s) is different from the one one specified in the filename (%s)", di.YearInOrgStruct, di.YearInFileName))
-	}
-	if di.DocumentType == "" {
+	/*	if di.YearInOrgStruct != "" && di.YearInFileName != "" && di.YearInOrgStruct != di.YearInFileName {
+			di.addMessage(options, fmt.Sprintf("The year specified in the folder (%s) is different from the one one specified in the filename (%s)", di.YearInOrgStruct, di.YearInFileName))
+		}
+	*/if di.DocumentType == "" {
 		di.addMessage(options, "Form (document) type was not found in the filename")
 	} else {
 		matched, err := regexp.MatchString("^278(NEW|ANN|TERM|TR0[1-9].*|TR1[0-2].*)$", di.DocumentType)
@@ -382,8 +382,8 @@ const htmlReportTemplate = `
 			table th
 			{
 				font-size: 14px;
-				font-weight: normal;
-				color: #039;
+				font-weight: bold;
+				color: #0;
 				padding: 10px 8px;
 				border-bottom: 2px solid #6678b1;
 			}
@@ -436,9 +436,9 @@ const htmlReportTemplate = `
 				</tr>
 				<tr>
 					<th>File</th>
-					<th>Agency</th>
-					<th>Component</th>
-					<th>Year</th>
+					<th>Level 1</th>
+					<th>Level 2</th>
+					<th>Level 3</th>
 					<th>Last Name</th>
 					<th>First Name</th>
 					<th>Middle</th>

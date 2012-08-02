@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -42,7 +43,6 @@ type Options struct {
 	PhpTemplate            string          // the PHP template the utility should use to generate 
 	PhpDataFile            string          // the PHP data file that should be created
 	PhpVarName             string          // the PHP variable that the data should be assigned to
-	Server                 int             // the PHP variable that the data should be assigned to
 	Verbose                bool
 }
 
@@ -151,6 +151,13 @@ func (di *DocumentInfo) validate(options Options, file WalkedFile) {
 	}
 	if di.DocumentType == "" {
 		di.addMessage(options, "Form (document) type was not found in the filename")
+	} else {
+		matched, err := regexp.MatchString("^278(NEW|ANN|TERM|TR0[1-9].*|TR1[0-2].*)$", di.DocumentType)
+		if err != nil {
+			di.addMessage(options, "Error matching string: "+err.Error())
+		} else if !matched {
+			di.addMessage(options, "Form (document) type '"+di.DocumentType+"' is invalid. Allowed: 278NEW, 278ANN, 278TERM, 278TRnn, 278nnxx")
+		}
 	}
 }
 
@@ -423,7 +430,8 @@ const htmlReportTemplate = `
 				<tr class>
 					<th>&nbsp;</th>
 					<th colspan="3">Folder Structure</th>
-					<th colspan="8">File naming convention</th>
+					<th colspan="6">Required Fields</th>
+					<th colspan="2">Optional Fields</th>
 					<th colspan="2">Validation</th>
 				</tr>
 				<tr>
@@ -437,8 +445,8 @@ const htmlReportTemplate = `
 					<th>Position Title</th>
 					<th>Year</th>
 					<th>Form Type</th>
-					<th>Emails</th>
-					<th>Optional</th>
+					<th>Email(s)</th>
+					<th>Comment</th>
 					<th>Errors?</th>
 				</tr>
 			</thead>

@@ -434,7 +434,7 @@ const htmlReportTemplate = `
 	</head>
 
 	<body>
-		<h1>OGE NoPAS Form Submissions Preparation Analysis Results</h1>
+		<h1>OGE Stock Act NonPAS Form Submissions File Name Testing Utility Results</h1>
 
 		<div>
 		Thank you for using the Office of Government Ethics (OGE.gov) NoPAS Forms Submission Preparation

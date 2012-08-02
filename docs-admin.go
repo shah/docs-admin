@@ -42,6 +42,7 @@ type Options struct {
 	PhpTemplate            string          // the PHP template the utility should use to generate 
 	PhpDataFile            string          // the PHP data file that should be created
 	PhpVarName             string          // the PHP variable that the data should be assigned to
+	Server                 int             // the PHP variable that the data should be assigned to
 	Verbose                bool
 }
 
@@ -303,7 +304,7 @@ func main() {
 	flag.StringVar(&options.Component, "component", "", "The component to use if it's not available in the folder structure")
 	flag.StringVar(&options.HtmlReport, "report", "report.html", "The file in which to store the HTML report")
 	flag.StringVar(&options.PhpDataFile, "phpDataFile", "", "The file in which to store the file information as PHP data")
-	flag.StringVar(&options.PhpVarName, "phpVarName", "FILES", "The PHP variable to assign the file data to")
+	flag.StringVar(&options.PhpVarName, "phpVarName", "$FILES", "The PHP variable to assign the file data to")
 	flag.BoolVar(&options.WarnOnMissingAgency, "warnOnMissingAgency", false, "Should we warn if a agency is missing from folder structure?")
 	flag.BoolVar(&options.WarnOnMissingComponent, "warnOnMissingComponent", false, "Should we warn if a component is missing from folder structure?")
 
@@ -324,7 +325,7 @@ func main() {
 }
 
 const phpDataTemplate = `
-{{.Options.PhpVarName}}_VERSION = ` + VERSION + `;
+{{.Options.PhpVarName}}_VERSION = "` + VERSION + `";
 {{.Options.PhpVarName}} = array(
 {{range .Inspected}}
 	array( "index" => {{.File.FileIndex}}, 
@@ -341,7 +342,7 @@ const phpDataTemplate = `
 		   "middleName" => "{{.MiddleName}}",
 		   "yearInFileName" => "{{.YearInFileName}}",
 		   "docType" => "{{.DocumentType}}",
-		   "emails" => array({{range .Emails}}"{{.}}",{{end}})
+		   "emails" => array({{range .Emails}}"{{.}}",{{end}}),
 		   "optional" => "{{.OptionalField}}",
 		   "valid" => {{.IsValid}},
 		   "errors" => array({{range .ValidationMessages}}"{{.}}",{{end}})
